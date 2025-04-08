@@ -72,33 +72,43 @@
             margin-bottom: 20px;
             display: flex;
             gap: 10px;
+            background: white;
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
         }
         .search-container input {
             flex: 1;
-            padding: 12px;
-            border: 1px solid #e0e4e8;
-            border-radius: 25px;
+            padding: 12px 20px;
+            border: 2px solid #e0e4e8;
+            border-radius: 30px;
             font-size: 16px;
             outline: none;
-            transition: border-color 0.3s;
+            transition: all 0.3s;
             background: var(--card-bg);
             color: var(--text-color);
         }
         .search-container input:focus {
             border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.2);
         }
         .search-container button {
             background: var(--primary-color);
             color: white;
             border: none;
-            padding: 12px 20px;
-            border-radius: 25px;
+            padding: 12px 25px;
+            border-radius: 30px;
             cursor: pointer;
             font-weight: 600;
             transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
         }
         .search-container button:hover {
             background: var(--hover-color);
+            transform: translateY(-2px);
         }
         .users-table {
             width: 100%;
@@ -344,6 +354,10 @@
             .search-container {
                 flex-direction: column;
             }
+            .search-container button {
+                width: 100%;
+                justify-content: center;
+            }
             .users-table {
                 display: block;
                 overflow-x: auto;
@@ -367,6 +381,15 @@
             .container {
                 padding: 10px;
                 padding-top: calc(var(--navbar-height) + 10px);
+            }
+            .search-container {
+                padding: 10px;
+            }
+            .search-container input {
+                padding: 10px 15px;
+            }
+            .search-container button {
+                padding: 10px 15px;
             }
             .modal-content {
                 width: 95%;
