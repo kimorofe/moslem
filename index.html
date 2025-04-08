@@ -300,6 +300,32 @@
             background-color: #fff8e6;
             color: var(--warning-color);
         }
+        .time-remaining {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .duration-inputs {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .duration-inputs input {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid #e0e4e8;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .duration-inputs label {
+            font-size: 12px;
+            text-align: center;
+        }
+        .duration-container {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
         
         /* Responsive styles */
         @media (max-width: 768px) {
@@ -331,6 +357,9 @@
                 margin-bottom: 5px;
                 display: block;
                 width: 100%;
+            }
+            .duration-inputs {
+                flex-direction: column;
             }
         }
         
@@ -404,10 +433,21 @@
             <textarea id="verifyUserNotes" rows="3" placeholder="أضف ملاحظات حول عملية التوثيق (اختياري)"></textarea>
         </div>
         <div class="form-group">
-            <label>مستوى التوثيق</label>
-            <select id="verifyUserLevel">
-                <option value="full">توثيق كامل (سيظهر في جميع أنحاء الموقع)</option>
-            </select>
+            <label>مدة التوثيق</label>
+            <div class="duration-inputs">
+                <div class="duration-container">
+                    <input type="number" id="verifyDays" min="0" placeholder="0">
+                    <label>أيام</label>
+                </div>
+                <div class="duration-container">
+                    <input type="number" id="verifyHours" min="0" placeholder="0">
+                    <label>ساعات</label>
+                </div>
+                <div class="duration-container">
+                    <input type="number" id="verifyMinutes" min="0" placeholder="0">
+                    <label>دقائق</label>
+                </div>
+            </div>
         </div>
         <div class="buttons">
             <button class="cancel-btn" onclick="closeModal('verifyUserModal')">إلغاء</button>
@@ -473,6 +513,7 @@
     let allUsers = [];
     let filteredUsers = [];
     let currentEditingUserId = null;
+    let verificationTimers = {};
 
     // Initialize the dashboard
     window.onload = function() {
@@ -496,6 +537,9 @@
             
             filteredUsers = [...allUsers];
             renderUsers();
+            
+            // Update verification timers
+            updateAllVerificationTimers();
         });
 
         // Listen for new posts to immediately update verification status
@@ -509,6 +553,69 @@
                 }
             }
         });
+    }
+
+    // Update all verification timers
+    function updateAllVerificationTimers() {
+        // Clear all existing timers
+        Object.keys(verificationTimers).forEach(userId => {
+            clearInterval(verificationTimers[userId]);
+        });
+        verificationTimers = {};
+        
+        // Set up new timers for verified users with expiration
+        allUsers.forEach(user => {
+            if (user.verified && user.verificationData && user.verificationData.expiresAt) {
+                setupVerificationTimer(user.id);
+            }
+        });
+    }
+
+    // Set up a timer for a specific user's verification
+    function setupVerificationTimer(userId) {
+        // Clear existing timer if any
+        if (verificationTimers[userId]) {
+            clearInterval(verificationTimers[userId]);
+        }
+        
+        // Set up new timer
+        verificationTimers[userId] = setInterval(() => {
+            updateVerificationStatus(userId);
+        }, 1000);
+    }
+
+    // Update verification status for a user
+    function updateVerificationStatus(userId) {
+        const user = allUsers.find(u => u.id === userId);
+        if (!user || !user.verified || !user.verificationData || !user.verificationData.expiresAt) {
+            return;
+        }
+        
+        const now = Date.now();
+        const expiresAt = user.verificationData.expiresAt;
+        
+        if (now >= expiresAt) {
+            // Verification expired, automatically unverify
+            db.ref(`users/${userId}`).update({
+                verified: false,
+                verificationData: {
+                    ...user.verificationData,
+                    expired: true,
+                    unverifiedAt: now,
+                    unverifiedBy: 'system'
+                }
+            });
+            
+            // Update verification in all related data
+            updateUserVerificationInPosts(userId, false);
+            updateUserVerificationInComments(userId, false);
+            updateUserVerificationInGroups(userId, false);
+            updateUserVerificationInMessages(userId, false);
+            
+            // Clear the timer
+            clearInterval(verificationTimers[userId]);
+            delete verificationTimers[userId];
+        }
     }
 
     // Load all users with verification status
@@ -531,6 +638,9 @@
             
             filteredUsers = [...allUsers];
             renderUsers();
+            
+            // Update verification timers
+            updateAllVerificationTimers();
             
         } catch (error) {
             console.error('Error loading users:', error);
@@ -558,10 +668,17 @@
             // Verification status
             let verificationStatus = '';
             if (user.verified) {
+                let timeRemaining = '';
+                if (user.verificationData?.expiresAt) {
+                    const remainingTime = calculateRemainingTime(user.verificationData.expiresAt);
+                    timeRemaining = `<div class="time-remaining">${remainingTime}</div>`;
+                }
+                
                 verificationStatus = `
                     <div class="verified-badge">
                         <i class="fas fa-check-circle"></i>
-                        <span>موثق ${user.verificationData?.level ? `(${getVerificationLevel(user.verificationData.level)})` : ''}</span>
+                        <span>موثق</span>
+                        ${timeRemaining}
                     </div>
                 `;
             } else {
@@ -601,14 +718,27 @@
         renderPagination();
     }
 
-    // Get verification level text
-    function getVerificationLevel(level) {
-        const levels = {
-            'basic': 'أساسي',
-            'advanced': 'متقدم',
-            'full': 'كامل'
-        };
-        return levels[level] || level;
+    // Calculate remaining time for verification
+    function calculateRemainingTime(expiresAt) {
+        const now = Date.now();
+        const diff = expiresAt - now;
+        
+        if (diff <= 0) {
+            return 'انتهى التوثيق';
+        }
+        
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+        
+        let result = '';
+        if (days > 0) result += `${days} يوم `;
+        if (hours > 0) result += `${hours} ساعة `;
+        if (minutes > 0) result += `${minutes} دقيقة `;
+        if (seconds > 0 && days === 0 && hours === 0) result += `${seconds} ثانية`;
+        
+        return `متبقي: ${result.trim()}`;
     }
 
     // Render pagination controls
@@ -682,7 +812,9 @@
         document.getElementById('verifyUserName').value = user.displayName || '';
         document.getElementById('verifyUserEmail').value = user.email || '';
         document.getElementById('verifyUserNotes').value = '';
-        document.getElementById('verifyUserLevel').value = 'full';
+        document.getElementById('verifyDays').value = '';
+        document.getElementById('verifyHours').value = '';
+        document.getElementById('verifyMinutes').value = '';
         
         openModal('verifyUserModal');
     }
@@ -690,16 +822,30 @@
     // Confirm verify user
     async function confirmVerifyUser() {
         const notes = document.getElementById('verifyUserNotes').value.trim();
-        const level = document.getElementById('verifyUserLevel').value;
+        const days = parseInt(document.getElementById('verifyDays').value) || 0;
+        const hours = parseInt(document.getElementById('verifyHours').value) || 0;
+        const minutes = parseInt(document.getElementById('verifyMinutes').value) || 0;
+        
+        if (days === 0 && hours === 0 && minutes === 0) {
+            showError('يجب تحديد مدة التوثيق');
+            return;
+        }
         
         try {
+            const now = Date.now();
+            const durationMs = (days * 24 * 60 * 60 * 1000) + 
+                              (hours * 60 * 60 * 1000) + 
+                              (minutes * 60 * 1000);
+            const expiresAt = now + durationMs;
+            
             const verificationData = {
                 verified: true,
                 verificationData: {
-                    verifiedAt: Date.now(),
+                    verifiedAt: now,
                     verifiedBy: 'admin',
-                    level: level,
-                    notes: notes
+                    notes: notes,
+                    expiresAt: expiresAt,
+                    duration: { days, hours, minutes }
                 }
             };
             
@@ -717,6 +863,9 @@
             
             // Update verification in all existing messages
             await updateUserVerificationInMessages(currentEditingUserId, true);
+            
+            // Set up timer for this verification
+            setupVerificationTimer(currentEditingUserId);
             
             // The real-time listener will handle the UI update automatically
             closeModal('verifyUserModal');
@@ -841,9 +990,11 @@
         const notes = document.getElementById('unverifyNotes').value.trim();
         
         try {
+            const user = allUsers.find(u => u.id === currentEditingUserId);
             const verificationData = {
                 verified: false,
                 verificationData: {
+                    ...(user.verificationData || {}),
                     unverifiedAt: Date.now(),
                     unverifiedBy: 'admin',
                     reason: reason,
@@ -865,6 +1016,12 @@
             
             // Update verification in all existing messages
             await updateUserVerificationInMessages(currentEditingUserId, false);
+            
+            // Clear the timer if exists
+            if (verificationTimers[currentEditingUserId]) {
+                clearInterval(verificationTimers[currentEditingUserId]);
+                delete verificationTimers[currentEditingUserId];
+            }
             
             // The real-time listener will handle the UI update automatically
             closeModal('unverifyUserModal');
